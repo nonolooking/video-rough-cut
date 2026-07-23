@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频粗剪工具</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;color:#eee;height:100vh;overflow:hidden}
+.app{height:100vh;display:flex;flex-direction:column}
+
+/* 头部 */
+.header{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:rgba(0,0,0,0.3);border-bottom:1px solid rgba(255,255,255,0.05);flex-shrink:0}
+.file-info{display:flex;align-items:center;gap:12px;overflow:hidden}
+.file-name{font-weight:500;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px}
+.file-meta{font-size:.8rem;color:#888;white-space:nowrap}
+.header-actions{display:flex;gap:8px;flex-shrink:0}
+.btn-icon{width:32px;height:32px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:#ccc;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.btn-icon:hover{background:rgba(255,255,255,0.15);color:#fff}
+.btn-close:hover{background:rgba(255,80,80,0.3)}
+
+/* 视频区 */
+.video-area{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.video-wrapper{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000;position:relative}
+.video-wrapper video{max-width:100%;max-height:100%;object-fit:contain;cursor:pointer}
+
+/* 自定义播放控制栏 */
+.player-controls{display:flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(0,0,0,0.6);border-top:1px solid rgba(255,255,255,0.05);flex-shrink:0}
+.btn-play{width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);color:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.btn-play:hover{background:rgba(255,255,255,0.2)}
+.player-progress{flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;position:relative}
+.player-progress-bar{height:100%;background:#4CAF50;border-radius:3px;width:0%;transition:width .1s}
+.player-time{font-size:.8rem;color:#aaa;font-family:'SF Mono',monospace;white-space:nowrap;flex-shrink:0}
+
+/* 快速控件 */
+.quick-controls{padding:12px 16px;background:rgba(0,0,0,0.4);border-top:1px solid rgba(255,255,255,0.05);display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+.time-display{display:flex;align-items:center;gap:6px;font-size:.85rem;font-family:'SF Mono',monospace;color:#aaa}
+.time-display .divider{color:#555}
+.time-display .muted{color:#666}
+
+/* 时间线 */
+.mini-timeline{height:28px;cursor:pointer;position:relative;display:flex;align-items:center}
+.track{width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;position:relative}
+.selection{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#4CAF50,#81C784);border-radius:3px;opacity:.7}
+.playhead{position:absolute;top:-4px;width:3px;height:14px;background:#fff;border-radius:2px;transform:translateX(-50%)}
+
+/* 标记按钮 */
+.mark-buttons{display:flex;align-items:center;gap:8px}
+.mark-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#aaa;cursor:pointer;transition:all .2s}
+.mark-btn:hover{background:rgba(255,255,255,0.1)}
+.mark-btn.active{border-color:#4CAF50;background:rgba(76,175,80,0.15);color:#81C784}
+.mark-btn .label{font-size:.7rem;text-transform:uppercase;letter-spacing:.5px}
+.mark-btn .time{font-size:.95rem;font-family:'SF Mono',monospace;font-weight:500}
+.selection-badge{padding:4px 12px;background:rgba(76,175,80,0.2);border-radius:12px;font-size:.8rem;color:#81C784;font-family:'SF Mono',monospace;white-space:nowrap}
+
+/* 旋转 */
+.rotate-row{display:flex;align-items:center;justify-content:center;gap:16px;padding:2px 0}
+.rotate-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#aaa;cursor:pointer;transition:all .2s;font-size:.85rem}
+.rotate-btn:hover{background:rgba(255,255,255,0.1);color:#fff}
+.rotate-btn.active{border-color:#2196F3;background:rgba(33,150,243,0.15);color:#64B5F6}
+.rotate-icon{font-size:1.1rem;line-height:1}
+.rotate-angle{font-family:'SF Mono',monospace;font-size:.95rem;color:#64B5F6;min-width:32px;text-align:center}
+
+/* 保存 */
+.save-bar{display:flex;gap:8px}
+.btn-save,.btn-save-as{flex:1;padding:10px;border-radius:8px;border:none;font-size:.9rem;font-weight:500;cursor:pointer;transition:all .2s}
+.btn-save{background:#4CAF50;color:white}
+.btn-save:hover{background:#45a049}
+.btn-save-as{background:rgba(255,255,255,0.08);color:#ccc}
+.btn-save-as:hover{background:rgba(255,255,255,0.15);color:#fff}
+
+/* 空状态 */
+.drop-zone{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
+.drop-content{text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+.drop-icon{font-size:4rem;opacity:.6}
+.drop-title{font-size:1.3rem;font-weight:500;color:#ddd}
+.drop-sub{font-size:.9rem;color:#777}
+.btn-browse{padding:10px 28px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#ddd;cursor:pointer;font-size:.95rem;transition:all .2s;margin-top:8px}
+.btn-browse:hover{background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3)}
+.drop-hint{font-size:.75rem;color:#555;margin-top:8px}
+
+/* 拖放遮罩 */
+.drag-overlay{position:fixed;inset:0;background:rgba(76,175,80,0.15);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;border:3px dashed #4CAF50}
+.drag-content{text-align:center}
+.drag-icon{font-size:3rem;margin-bottom:8px}
+.drag-content p{font-size:1.1rem;color:#81C784}
+
+/* 进度 */
+.progress-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:200}
+.progress-content{text-align:center}
+.spinner{width:48px;height:48px;border:3px solid rgba(255,255,255,0.1);border-top-color:#4CAF50;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress-content p{color:#aaa}
+
+.hidden{display:none!important}
+input[type="file"]{display:none}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- 头部（有视频时显示） -->
+  <div class="header hidden" id="header">
+    <div class="file-info">
+      <span class="file-name" id="fileName">未命名</span>
+      <span class="file-meta" id="fileMeta">00:00</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn-icon" id="btnOpen" title="打开其他视频">📂</button>
+      <button class="btn-icon btn-close" id="btnClose" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <!-- 视频区（有视频时显示） -->
+  <div class="video-area hidden" id="videoArea">
+    <div class="video-wrapper">
+      <video id="vplayer"></video>
+    </div>
+
+    <!-- 自定义播放控制栏 -->
+    <div class="player-controls">
+      <button class="btn-play" id="btnPlay">▶</button>
+      <div class="player-progress" id="playerProgress">
+        <div class="player-progress-bar" id="playerProgressBar"></div>
+      </div>
+      <span class="player-time" id="playerTime">00:00 / 00:00</span>
+    </div>
+
+    <div class="quick-controls">
+      <div class="time-display">
+        <span id="curTime">00:00</span>
+        <span class="divider">/</span>
+        <span class="muted" id="totalTime">00:00</span>
+      </div>
+
+      <div class="mini-timeline" id="timeline">
+        <div class="track">
+          <div class="selection" id="selRange"></div>
+          <div class="playhead" id="playhead"></div>
+        </div>
+      </div>
+
+      <div class="mark-buttons">
+        <button class="mark-btn" id="btnIn">
+          <span class="label">入点</span>
+          <span class="time" id="txtIn">00:00</span>
+        </button>
+        <div class="selection-badge hidden" id="badgeDur">
+          <span id="txtDur">00:00</span>
+        </div>
+        <button class="mark-btn" id="btnOut">
+          <span class="label">出点</span>
+          <span class="time" id="txtOut">00:00</span>
+        </button>
+      </div>
+
+      <div class="rotate-row">
+        <button class="rotate-btn" id="btnRotate" title="顺时针旋转90度 (R)">
+          <span class="rotate-icon">↻</span>
+          <span class="rotate-label">旋转</span>
+        </button>
+        <span class="rotate-angle" id="txtRotate">0°</span>
+        <button class="rotate-btn" id="btnRotateCCW" title="逆时针旋转90度">
+          <span class="rotate-icon">↺</span>
+          <span class="rotate-label">反转</span>
+        </button>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn-save" id="btnSave">保存裁剪</button>
+        <button class="btn-save-as" id="btnSaveAs">另存为...</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 空状态 -->
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-content">
+      <div class="drop-icon">🎬</div>
+      <p class="drop-title">拖拽视频到此处</p>
+      <p class="drop-sub">或点击下方按钮选择视频</p>
+      <button class="btn-browse" id="btnBrowse">选择视频</button>
+      <p class="drop-hint">支持 MP4, MOV, AVI, MKV 等格式</p>
+    </div>
+  </div>
+
+  <!-- 拖放遮罩 -->
+  <div class="drag-overlay hidden" id="dragOverlay">
+    <div class="drag-content">
+      <div class="drag-icon">⬇️</div>
+      <p>释放以打开视频</p>
+    </div>
+  </div>
+
+  <!-- 进度 -->
+  <div class="progress-overlay hidden" id="progOverlay">
+    <div class="progress-content">
+      <div class="spinner"></div>
+      <p>正在处理...</p>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="finput" accept="video/*">
+
+<script>
+// 状态
+const state = {
+  fileName: '',
+  duration: 0,
+  currentTime: 0,
+  inTime: 0,
+  outTime: 0,
+  rotation: 0  // 0, 90, 180, 270
+};
+
+// DOM
+const $ = id => document.getElementById(id);
+const vplayer = $('vplayer');
+
+// 工具
+function fmtTime(s) {
+  if (!s || s < 0 || isNaN(s)) return '00:00';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function render() {
+  // 切换视图
+  if (state.fileName) {
+    $('header').classList.remove('hidden');
+    $('videoArea').classList.remove('hidden');
+    $('dropZone').classList.add('hidden');
+  } else {
+    $('header').classList.add('hidden');
+    $('videoArea').classList.add('hidden');
+    $('dropZone').classList.remove('hidden');
+  }
+
+  // 更新显示
+  $('fileName').textContent = state.fileName;
+  $('fileMeta').textContent = fmtTime(state.duration);
+  $('curTime').textContent = fmtTime(state.currentTime);
+  $('totalTime').textContent = fmtTime(state.duration);
+  $('txtIn').textContent = fmtTime(state.inTime);
+  $('txtOut').textContent = fmtTime(state.outTime);
+  $('txtDur').textContent = fmtTime(state.outTime - state.inTime);
+
+  // 标记状态
+  $('btnIn').classList.toggle('active', state.inTime > 0);
+  $('btnOut').classList.toggle('active', state.outTime < state.duration && state.duration > 0);
+
+  // 时长徽章
+  const hasSel = state.inTime > 0 || (state.outTime < state.duration && state.duration > 0);
+  $('badgeDur').classList.toggle('hidden', !hasSel);
+
+  // 播放头
+  const pct = state.duration > 0 ? (state.currentTime / state.duration * 100) : 0;
+  $('playhead').style.left = pct + '%';
+
+  // 选择范围
+  if (state.duration > 0) {
+    const s = state.inTime / state.duration * 100;
+    const e = state.outTime / state.duration * 100;
+    $('selRange').style.left = s + '%';
+    $('selRange').style.width = (e - s) + '%';
+  }
+
+  // 自定义播放进度条
+  if (state.duration > 0) {
+    const progPct = (state.currentTime / state.duration) * 100;
+    $('playerProgressBar').style.width = progPct + '%';
+    $('playerTime').textContent = fmtTime(state.currentTime) + ' / ' + fmtTime(state.duration);
+  }
+
+  // 旋转 - 只旋转视频画面，不影响控制栏
+  $('txtRotate').textContent = state.rotation + '°';
+  $('btnRotate').classList.toggle('active', state.rotation > 0);
+  $('btnRotateCCW').classList.toggle('active', state.rotation > 0);
+  // 只对 video 元素应用旋转，不旋转包含控制栏的父容器
+  vplayer.style.transform = 'rotate(' + state.rotation + 'deg)';
+}
+
+function loadVideo(file) {
+  if (!file) return;
+  if (!file.type.startsWith('video/')) {
+    alert('请选择视频文件');
+    return;
+  }
+
+  state.fileName = file.name;
+  state.duration = 0;
+  state.currentTime = 0;
+  state.inTime = 0;
+  state.outTime = 0;
+  state.rotation = 0;
+
+  const url = URL.createObjectURL(file);
+  vplayer.src = url;
+  vplayer.load();
+  vplayer.onloadedmetadata = () => {
+    state.duration = vplayer.duration;
+    state.outTime = vplayer.duration;
+    render();
+  };
+  vplayer.ontimeupdate = () => {
+    state.currentTime = vplayer.currentTime;
+    render();
+  };
+  render();
+}
+
+// 事件绑定
+$('finput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) loadVideo(f);
+  e.target.value = '';
+});
+
+$('btnBrowse').addEventListener('click', () => $('finput').click());
+$('btnOpen').addEventListener('click', () => $('finput').click());
+
+$('btnClose').addEventListener('click', () => {
+  state.fileName = '';
+  vplayer.pause();
+  vplayer.src = '';
+  render();
+});
+
+$('btnIn').addEventListener('click', () => {
+  state.inTime = state.currentTime;
+  if (state.inTime > state.outTime) state.outTime = state.duration;
+  render();
+});
+
+$('btnOut').addEventListener('click', () => {
+  state.outTime = state.currentTime;
+  if (state.outTime < state.inTime) state.inTime = 0;
+  render();
+});
+
+// 旋转
+$('btnRotate').addEventListener('click', () => {
+  state.rotation = (state.rotation + 90) % 360;
+  render();
+});
+$('btnRotateCCW').addEventListener('click', () => {
+  state.rotation = (state.rotation - 90 + 360) % 360;
+  render();
+});
+
+$('btnSave').addEventListener('click', () => {
+  $('progOverlay').classList.remove('hidden');
+  setTimeout(() => {
+    $('progOverlay').classList.add('hidden');
+    const rotInfo = state.rotation > 0 ? `\n旋转: ${state.rotation}°` : '';
+    alert(`✅ 裁剪完成（演示）\n\n文件: ${state.fileName}\n入点: ${fmtTime(state.inTime)}\n出点: ${fmtTime(state.outTime)}\n时长: ${fmtTime(state.outTime - state.inTime)}${rotInfo}\n\n注意：Web版无法直接保存视频文件。\n完整功能请使用桌面版。`);
+  }, 800);
+});
+
+$('btnSaveAs').addEventListener('click', () => {
+  $('progOverlay').classList.remove('hidden');
+  setTimeout(() => {
+    $('progOverlay').classList.add('hidden');
+    const rotInfo = state.rotation > 0 ? `\n旋转: ${state.rotation}°` : '';
+    alert(`✅ 另存为（演示）\n\n新文件: ${state.fileName.replace(/\.[^.]+$/, '')}_edited.mp4\n入点: ${fmtTime(state.inTime)}\n出点: ${fmtTime(state.outTime)}\n时长: ${fmtTime(state.outTime - state.inTime)}${rotInfo}\n\n注意：Web版无法直接保存视频文件。\n完整功能请使用桌面版。`);
+  }, 800);
+});
+
+$('timeline').addEventListener('click', e => {
+  if (!state.duration) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  vplayer.currentTime = ((e.clientX - rect.left) / rect.width) * state.duration;
+});
+
+// 自定义播放控制
+function updatePlayButton() {
+  $('btnPlay').textContent = vplayer.paused ? '▶' : '⏸';
+}
+
+$('btnPlay').addEventListener('click', () => {
+  if (vplayer.paused) vplayer.play();
+  else vplayer.pause();
+  updatePlayButton();
+});
+
+vplayer.addEventListener('play', updatePlayButton);
+vplayer.addEventListener('pause', updatePlayButton);
+
+// 自定义进度条点击
+$('playerProgress').addEventListener('click', e => {
+  if (!state.duration) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  vplayer.currentTime = ((e.clientX - rect.left) / rect.width) * state.duration;
+});
+
+// 点击视频画面播放/暂停
+vplayer.addEventListener('click', () => {
+  if (vplayer.paused) vplayer.play();
+  else vplayer.pause();
+});
+
+// 拖放
+let dragCounter = 0;
+document.addEventListener('dragenter', e => {
+  e.preventDefault();
+  dragCounter++;
+  $('dragOverlay').classList.remove('hidden');
+});
+document.addEventListener('dragleave', e => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
+    $('dragOverlay').classList.add('hidden');
+  }
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  dragCounter = 0;
+  $('dragOverlay').classList.add('hidden');
+  const f = e.dataTransfer.files[0];
+  if (f) loadVideo(f);
+});
+
+// 键盘
+document.addEventListener('keydown', e => {
+  if (!state.fileName) return;
+  // I = 入点, O = 出点, R = 旋转, ESC = 关闭
+  if (e.key === 'i' || e.key === 'I') {
+    state.inTime = state.currentTime;
+    if (state.inTime > state.outTime) state.outTime = state.duration;
+    render();
+  } else if (e.key === 'o' || e.key === 'O') {
+    state.outTime = state.currentTime;
+    if (state.outTime < state.inTime) state.inTime = 0;
+    render();
+  } else if (e.key === 'r' || e.key === 'R') {
+    state.rotation = (state.rotation + 90) % 360;
+    render();
+  } else if (e.key === 'Escape') {
+    $('btnClose').click();
+  }
+});
+
+// 初始
+render();
+</script>
+</body>
+</html>
