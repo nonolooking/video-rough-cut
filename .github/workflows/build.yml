@@ -19,12 +19,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install WiX Toolset
-        run: choco install wixtoolset --yes
-
-      - name: Add WiX to PATH
-        run: echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
-
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
