@@ -32,10 +32,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v1.0.0
-          releaseName: '视频粗剪工具 v1.0.0'
-          releaseBody: '跨平台视频粗剪工具 - macOS/Windows 版本'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
 
       - name: Upload macOS artifacts
@@ -73,10 +70,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v1.0.0
-          releaseName: '视频粗剪工具 v1.0.0'
-          releaseBody: '跨平台视频粗剪工具 - macOS/Windows 版本'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
 
       - name: Upload Windows artifacts
