@@ -92,7 +92,10 @@ async fn cut_video(
     
     args.extend_from_slice(&[
         "-c:v".into(), "libx264".into(),
+        "-crf".into(), "18".into(),
+        "-preset".into(), "medium".into(),
         "-c:a".into(), "aac".into(),
+        "-b:a".into(), "192k".into(),
         "-strict".into(), "experimental".into(),
         output_str.clone(),
     ]);
