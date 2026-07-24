@@ -145,7 +145,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import { open } from '@tauri-apps/api/dialog'
-import { convertFileSrc, appWindow } from '@tauri-apps/api/tauri'
+import { convertFileSrc } from '@tauri-apps/api/tauri'
+import { writeBinaryFile, BaseDirectory } from '@tauri-apps/api/fs'
 
 const videoPath = ref<string>('')
 const videoUrl = ref<string>('')
@@ -189,20 +190,16 @@ function formatTime(seconds: number): string {
 async function loadVideo(path: string) {
   videoPath.value = path
   fileName.value = path.split(/[\\/]/).pop() || '未知文件'
-  try {
-    videoUrl.value = convertFileSrc(path, 'assets')
-  } catch {
-    videoUrl.value = convertFileSrc(path)
-  }
+  videoUrl.value = convertFileSrc(path)
   startTime.value = 0
   endTime.value = 0
   currentTime.value = 0
   duration.value = 0
-  setTimeout(() => {
-    if (videoPlayer.value) {
-      videoPlayer.value.load()
-    }
-  }, 100)
+  // 给DOM时间更新src，然后手动触发加载
+  await new Promise(r => setTimeout(r, 50))
+  if (videoPlayer.value) {
+    videoPlayer.value.load()
+  }
 }
 
 async function openFile() {
@@ -221,18 +218,18 @@ async function openFile() {
   }
 }
 
-function handleDrop(event: DragEvent) {
+async function handleDrop(event: DragEvent) {
   dragOver.value = false
   const files = event.dataTransfer?.files
   if (files && files.length > 0) {
     const file = files[0]
     if (file.type.startsWith('video/')) {
-      videoPath.value = file.name
-      fileName.value = file.name
-      videoUrl.value = URL.createObjectURL(file)
-      startTime.value = 0
-      endTime.value = 0
-      currentTime.value = 0
+      const arrayBuffer = await file.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
+      const tempName = `temp_${Date.now()}_${file.name}`
+      await writeBinaryFile(tempName, uint8Array, { dir: BaseDirectory.Temp })
+      const tempPath = await invoke<string>('get_temp_path', { fileName: tempName })
+      await loadVideo(tempPath)
     }
   }
 }

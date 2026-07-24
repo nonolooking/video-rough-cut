@@ -102,6 +102,13 @@ fn get_startup_file() -> Option<String> {
     }
 }
 
+#[tauri::command]
+fn get_temp_path(file_name: String) -> String {
+    let mut path = std::env::temp_dir();
+    path.push(file_name);
+    path.to_string_lossy().to_string()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
@@ -117,7 +124,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![cut_video, get_startup_file])
+        .invoke_handler(tauri::generate_handler![cut_video, get_startup_file, get_temp_path])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
