@@ -156,7 +156,7 @@ fn main() {
             Ok(())
         })
         .on_window_event(|event| {
-            if let tauri::WindowEvent::FileDrop(paths) = event.event() {
+            if let tauri::WindowEvent::FileDrop(tauri::FileDropEvent::Dropped(paths)) = event.event() {
                 if let Some(path) = paths.first() {
                     if let Some(ext) = path.extension() {
                         let ext = ext.to_string_lossy().to_lowercase();
