@@ -20,11 +20,11 @@
 
     <!-- 视频区域 -->
     <div class="video-area" v-if="videoPath">
-      <div class="video-wrapper">
+      <div class="video-wrapper" ref="videoWrapper">
         <video
           ref="videoPlayer"
           :src="videoUrl"
-          :style="{ transform: 'rotate(' + rotation + 'deg)' }"
+          :style="videoStyle"
           @loadedmetadata="onVideoLoaded"
           @timeupdate="onTimeUpdate"
           @error="onVideoError"
@@ -38,6 +38,19 @@
         <div class="player-progress" @click="onPlayerProgressClick">
           <div class="player-progress-bar" :style="{ width: playheadPercent + '%' }"></div>
         </div>
+        <button class="btn-mute" @click="toggleMute" title="静音/取消静音">
+          {{ isMuted ? '🔇' : '🔊' }}
+        </button>
+        <input
+          type="range"
+          class="volume-slider"
+          min="0"
+          max="1"
+          step="0.05"
+          :value="isMuted ? 0 : volume"
+          @input="(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))"
+          title="音量"
+        />
         <span class="player-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
       </div>
 
@@ -143,16 +156,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import { open, message } from '@tauri-apps/api/dialog'
 import { convertFileSrc } from '@tauri-apps/api/tauri'
-import { writeBinaryFile, BaseDirectory } from '@tauri-apps/api/fs'
+import { listen } from '@tauri-apps/api/event'
 
 const videoPath = ref<string>('')
 const videoUrl = ref<string>('')
 const fileName = ref<string>('')
 const videoPlayer = ref<HTMLVideoElement | null>(null)
+const videoWrapper = ref<HTMLElement | null>(null)
 const currentTime = ref(0)
 const duration = ref(0)
 const startTime = ref(0)
@@ -161,6 +175,10 @@ const isProcessing = ref(false)
 const dragOver = ref(false)
 const rotation = ref(0)
 const isPlaying = ref(false)
+const isMuted = ref(false)
+const volume = ref(1)
+const wrapperSize = ref({ width: 0, height: 0 })
+const videoNaturalSize = ref({ width: 0, height: 0 })
 
 const hasSelection = computed(() => startTime.value > 0 || endTime.value < duration.value)
 
@@ -176,6 +194,42 @@ const selectionStyle = computed(() => {
   return {
     left: start + '%',
     width: (end - start) + '%'
+  }
+})
+
+// 根据旋转角度和容器尺寸动态计算视频样式
+const videoStyle = computed(() => {
+  const rot = rotation.value % 360
+  const isRotated = rot === 90 || rot === 270
+  const transform = `rotate(${rotation.value}deg)`
+  const W = wrapperSize.value.width
+  const H = wrapperSize.value.height
+  const vw = videoNaturalSize.value.width || 1920
+  const vh = videoNaturalSize.value.height || 1080
+
+  if (!isRotated) {
+    // 0°或180°：正常适配，保持比例
+    const scale = Math.min(W / vw, H / vh, 1)
+    return {
+      transform,
+      width: `${vw * scale}px`,
+      height: `${vh * scale}px`,
+      maxWidth: '100%',
+      maxHeight: '100%'
+    }
+  }
+
+  // 旋转90°/270°时：交换宽高约束
+  // 视觉宽度 = 元素高度，视觉高度 = 元素宽度
+  // 需要：元素高度 <= W，元素宽度 <= H
+  // 保持原始比例 vw/vh
+  const scale = Math.min(W / vh, H / vw, 1)
+  return {
+    transform,
+    width: `${vw * scale}px`,
+    height: `${vh * scale}px`,
+    maxWidth: `${H}px`,
+    maxHeight: `${W}px`
   }
 })
 
@@ -200,9 +254,15 @@ async function loadVideo(path: string) {
   endTime.value = 0
   currentTime.value = 0
   duration.value = 0
+  rotation.value = 0
+  isMuted.value = false
+  volume.value = 1
+  videoNaturalSize.value = { width: 0, height: 0 }
   // 给DOM时间更新src，然后手动触发加载
   await new Promise(r => setTimeout(r, 50))
   if (videoPlayer.value) {
+    videoPlayer.value.muted = false
+    videoPlayer.value.volume = 1
     videoPlayer.value.load()
   }
 }
@@ -223,18 +283,16 @@ async function openFile() {
   }
 }
 
+// 前端拖放备用（Tauri file-drop 事件已接管主逻辑）
 async function handleDrop(event: DragEvent) {
   dragOver.value = false
+  // 如果 Rust 端的 file-drop 事件已处理，这里不需要重复处理
+  // 但为了防止某些情况下事件未触发，保留简单的提示
   const files = event.dataTransfer?.files
   if (files && files.length > 0) {
     const file = files[0]
-    if (file.type.startsWith('video/')) {
-      const arrayBuffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
-      const tempName = `temp_${Date.now()}_${file.name}`
-      await writeBinaryFile(tempName, uint8Array, { dir: BaseDirectory.Temp })
-      const tempPath = await invoke<string>('get_temp_path', { fileName: tempName })
-      await loadVideo(tempPath)
+    if (!file.type.startsWith('video/')) {
+      await message('请拖放视频文件', { title: '提示', type: 'warning' })
     }
   }
 }
@@ -243,6 +301,11 @@ function onVideoLoaded(event: Event) {
   const video = event.target as HTMLVideoElement
   duration.value = video.duration
   endTime.value = video.duration
+  videoNaturalSize.value = {
+    width: video.videoWidth || 1920,
+    height: video.videoHeight || 1080
+  }
+  console.log('[onVideoLoaded] natural size:', videoNaturalSize.value)
 }
 
 async function onVideoError(event: Event) {
@@ -267,6 +330,27 @@ function togglePlay() {
     } else {
       videoPlayer.value.pause()
       isPlaying.value = false
+    }
+  }
+}
+
+function toggleMute() {
+  if (videoPlayer.value) {
+    isMuted.value = !isMuted.value
+    videoPlayer.value.muted = isMuted.value
+  }
+}
+
+function setVolume(vol: number) {
+  volume.value = vol
+  if (videoPlayer.value) {
+    videoPlayer.value.volume = vol
+    if (vol === 0) {
+      isMuted.value = true
+      videoPlayer.value.muted = true
+    } else if (isMuted.value) {
+      isMuted.value = false
+      videoPlayer.value.muted = false
     }
   }
 }
@@ -312,6 +396,7 @@ function closeVideo() {
   endTime.value = 0
   duration.value = 0
   rotation.value = 0
+  isMuted.value = false
 }
 
 function rotateCW() {
@@ -354,6 +439,56 @@ async function processVideo(saveAsNew: boolean) {
   }
 }
 
+// 监听 Tauri 内置文件拖放事件（更可靠）
+let unlistenFileDrop: (() => void) | null = null
+listen<string[]>('tauri://file-drop', (event) => {
+  const paths = event.payload
+  if (paths && paths.length > 0) {
+    const path = paths[0]
+    const ext = path.split('.').pop()?.toLowerCase() || ''
+    if (['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'm4v'].includes(ext)) {
+      loadVideo(path)
+    }
+  }
+}).then(fn => {
+  unlistenFileDrop = fn
+})
+
+// 同时保留对自定义 file-drop 事件的兼容
+let unlistenCustomFileDrop: (() => void) | null = null
+listen<string>('file-drop', (event) => {
+  if (event.payload) {
+    loadVideo(event.payload)
+  }
+}).then(fn => {
+  unlistenCustomFileDrop = fn
+})
+
+// ResizeObserver 监听视频容器尺寸变化
+let resizeObserver: ResizeObserver | null = null
+watch(videoPath, async (newVal) => {
+  if (newVal) {
+    await nextTick()
+    if (videoWrapper.value) {
+      if (resizeObserver) resizeObserver.disconnect()
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          wrapperSize.value = {
+            width: entry.contentRect.width,
+            height: entry.contentRect.height
+          }
+        }
+      })
+      resizeObserver.observe(videoWrapper.value)
+    }
+  } else {
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      resizeObserver = null
+    }
+  }
+})
+
 onMounted(() => {
   // 检查 FFmpeg 是否可用
   invoke<boolean>('check_ffmpeg').then(ok => {
@@ -373,17 +508,33 @@ onMounted(() => {
   })
 
   // 键盘快捷键
-  document.addEventListener('keydown', (e) => {
+  const keyHandler = (e: KeyboardEvent) => {
     if (!videoPath.value) return
     if (e.key === 'r' || e.key === 'R') {
       rotateCW()
     } else if (e.key === 'Escape') {
       closeVideo()
+    } else if (e.key === ' ') {
+      e.preventDefault()
+      togglePlay()
     }
-  })
+  }
+  document.addEventListener('keydown', keyHandler)
 
-  // 监听拖放
-  document.addEventListener('dragover', (e) => e.preventDefault())
+  // 监听拖放（阻止默认行为）
+  const dragoverHandler = (e: DragEvent) => e.preventDefault()
+  document.addEventListener('dragover', dragoverHandler)
+
+  onUnmounted(() => {
+    document.removeEventListener('keydown', keyHandler)
+    document.removeEventListener('dragover', dragoverHandler)
+  })
+})
+
+onUnmounted(() => {
+  if (unlistenFileDrop) unlistenFileDrop()
+  if (unlistenCustomFileDrop) unlistenCustomFileDrop()
+  if (resizeObserver) resizeObserver.disconnect()
 })
 </script>
 
@@ -472,8 +623,6 @@ onMounted(() => {
 }
 
 .video-wrapper video {
-  max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
   cursor: pointer;
 }
@@ -507,6 +656,57 @@ onMounted(() => {
 
 .btn-play:hover {
   background: rgba(255,255,255,0.2);
+}
+
+.btn-mute {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255,255,255,0.08);
+  color: #ccc;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-mute:hover {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
 }
 
 .player-progress {

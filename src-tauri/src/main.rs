@@ -145,7 +145,7 @@ fn main() {
     if args.len() > 1 {
         STARTUP_FILE.store(true, Ordering::SeqCst);
     }
-    
+
     tauri::Builder::default()
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -154,6 +154,18 @@ fn main() {
                 window.open_devtools();
             }
             Ok(())
+        })
+        .on_window_event(|event| {
+            if let tauri::WindowEvent::FileDrop(paths) = event.event() {
+                if let Some(path) = paths.first() {
+                    if let Some(ext) = path.extension() {
+                        let ext = ext.to_string_lossy().to_lowercase();
+                        if ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v"].contains(&ext.as_str()) {
+                            let _ = event.window().emit("file-drop", path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![cut_video, get_startup_file, get_temp_path, check_ffmpeg])
         .run(tauri::generate_context!())

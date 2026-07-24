@@ -80,7 +80,8 @@
         "width": 1200,
         "minWidth": 800,
         "minHeight": 600,
-        "center": true
+        "center": true,
+        "fileDropEnabled": true
       }
     ]
   }
