@@ -65,7 +65,7 @@
       }
     },
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; media-src 'self' asset: https://asset.localhost; img-src 'self' asset: https://asset.localhost; connect-src 'self'"
     },
     "updater": {
       "active": false

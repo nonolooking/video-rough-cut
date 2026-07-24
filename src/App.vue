@@ -27,6 +27,7 @@
           :style="{ transform: 'rotate(' + rotation + 'deg)' }"
           @loadedmetadata="onVideoLoaded"
           @timeupdate="onTimeUpdate"
+          @error="onVideoError"
           @click="togglePlay"
         ></video>
       </div>
@@ -190,7 +191,9 @@ function formatTime(seconds: number): string {
 async function loadVideo(path: string) {
   videoPath.value = path
   fileName.value = path.split(/[\\/]/).pop() || '未知文件'
-  videoUrl.value = convertFileSrc(path)
+  // Windows路径转为正斜杠，避免convertFileSrc处理异常
+  const normalizedPath = path.replace(/\\/g, '/')
+  videoUrl.value = convertFileSrc(normalizedPath)
   startTime.value = 0
   endTime.value = 0
   currentTime.value = 0
@@ -238,6 +241,12 @@ function onVideoLoaded(event: Event) {
   const video = event.target as HTMLVideoElement
   duration.value = video.duration
   endTime.value = video.duration
+}
+
+function onVideoError(event: Event) {
+  const video = event.target as HTMLVideoElement
+  console.error('视频加载失败:', video.error, 'src:', video.src)
+  alert(`视频加载失败 (错误码: ${video.error?.code || 'unknown'})。这可能是由于:\n1. 文件路径包含特殊字符\n2. 视频编码格式不被支持\n3. 生产环境权限限制\n\n请尝试将视频复制到简单路径(如 D:/test.mp4)再试。`)
 }
 
 function onTimeUpdate(event: Event) {
