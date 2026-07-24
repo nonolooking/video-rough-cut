@@ -11,6 +11,14 @@ use tauri::Manager;
 static STARTUP_FILE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
+fn check_ffmpeg() -> Result<bool, String> {
+    match Command::new("ffmpeg").arg("-version").output() {
+        Ok(output) if output.status.success() => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+#[tauri::command]
 async fn cut_video(
     input_path: String,
     start_time: f64,
@@ -19,6 +27,15 @@ async fn cut_video(
     rotation: i32,
     _app_handle: tauri::AppHandle
 ) -> Result<String, String> {
+    println!("[cut_video] input: {}, start: {}, end: {}, save_as_new: {}, rotation: {}",
+        input_path, start_time, end_time, save_as_new, rotation);
+
+    // 先检查 FFmpeg 是否可用
+    match Command::new("ffmpeg").arg("-version").output() {
+        Ok(output) if output.status.success() => {},
+        _ => return Err("未检测到 FFmpeg。请先安装 FFmpeg 并添加到系统环境变量 PATH 中，然后重启本软件。\n下载地址: https://ffmpeg.org/download.html".to_string()),
+    }
+
     let input = PathBuf::from(&input_path);
     
     if !input.exists() {
@@ -80,16 +97,27 @@ async fn cut_video(
         output_str.clone(),
     ]);
     
+    println!("[cut_video] ffmpeg args: {:?}", args);
+
     let ffmpeg_status = Command::new("ffmpeg")
         .args(&args)
         .status();
-    
+
+    println!("[cut_video] ffmpeg result: {:?}", ffmpeg_status);
+
     match ffmpeg_status {
         Ok(status) if status.success() => {
+            println!("[cut_video] success, output: {}", output_str);
             Ok(output_str)
         },
-        Ok(_) => Err("视频处理失败，请检查 FFmpeg 是否正确安装".to_string()),
-        Err(_) => Err("无法执行 FFmpeg，请确保已安装 FFmpeg 并添加到系统路径".to_string())
+        Ok(status) => {
+            println!("[cut_video] ffmpeg exited with code: {:?}", status.code());
+            Err(format!("FFmpeg 处理失败 (退出码: {:?})。请检查视频文件是否损坏，或尝试其他格式。", status.code()))
+        },
+        Err(e) => {
+            println!("[cut_video] ffmpeg execution error: {:?}", e);
+            Err("无法执行 FFmpeg，请确保已安装 FFmpeg 并添加到系统环境变量 PATH 中，然后重启本软件。\n下载地址: https://ffmpeg.org/download.html".to_string())
+        }
     }
 }
 
@@ -124,7 +152,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![cut_video, get_startup_file, get_temp_path])
+        .invoke_handler(tauri::generate_handler![cut_video, get_startup_file, get_temp_path, check_ffmpeg])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

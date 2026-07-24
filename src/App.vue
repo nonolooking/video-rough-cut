@@ -145,7 +145,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
-import { open } from '@tauri-apps/api/dialog'
+import { open, message } from '@tauri-apps/api/dialog'
 import { convertFileSrc } from '@tauri-apps/api/tauri'
 import { writeBinaryFile, BaseDirectory } from '@tauri-apps/api/fs'
 
@@ -189,11 +189,13 @@ function formatTime(seconds: number): string {
 }
 
 async function loadVideo(path: string) {
+  console.log('[loadVideo] loading:', path)
   videoPath.value = path
   fileName.value = path.split(/[\\/]/).pop() || '未知文件'
   // Windows路径转为正斜杠，避免convertFileSrc处理异常
   const normalizedPath = path.replace(/\\/g, '/')
   videoUrl.value = convertFileSrc(normalizedPath)
+  console.log('[loadVideo] videoUrl:', videoUrl.value)
   startTime.value = 0
   endTime.value = 0
   currentTime.value = 0
@@ -243,10 +245,13 @@ function onVideoLoaded(event: Event) {
   endTime.value = video.duration
 }
 
-function onVideoError(event: Event) {
+async function onVideoError(event: Event) {
   const video = event.target as HTMLVideoElement
   console.error('视频加载失败:', video.error, 'src:', video.src)
-  alert(`视频加载失败 (错误码: ${video.error?.code || 'unknown'})。这可能是由于:\n1. 文件路径包含特殊字符\n2. 视频编码格式不被支持\n3. 生产环境权限限制\n\n请尝试将视频复制到简单路径(如 D:/test.mp4)再试。`)
+  await message(
+    `视频加载失败 (错误码: ${video.error?.code || 'unknown'})。\n\n可能原因:\n1. 文件路径包含特殊字符\n2. 视频编码格式不被支持\n3. 生产环境权限限制\n\n建议: 将视频复制到简单路径(如 D:/test.mp4)再试。`,
+    { title: '视频加载失败', type: 'error' }
+  )
 }
 
 function onTimeUpdate(event: Event) {
@@ -327,26 +332,39 @@ async function saveVideoAs() {
 
 async function processVideo(saveAsNew: boolean) {
   if (!videoPath.value) return
+  console.log('[processVideo] start, path:', videoPath.value, 'start:', startTime.value, 'end:', endTime.value, 'rotation:', rotation.value)
   isProcessing.value = true
   try {
-    const result = await invoke('cut_video', {
+    const result = await invoke<string>('cut_video', {
       inputPath: videoPath.value,
       startTime: startTime.value,
       endTime: endTime.value,
       saveAsNew: saveAsNew,
       rotation: rotation.value
     })
+    console.log('[processVideo] success:', result)
     if (result) {
-      alert(`视频已保存到: ${result}`)
+      await message(`视频已保存到:\n${result}`, { title: '保存成功', type: 'info' })
     }
-  } catch (error) {
-    alert(`处理失败: ${error}`)
+  } catch (error: any) {
+    console.error('[processVideo] error:', error)
+    await message(String(error), { title: '处理失败', type: 'error' })
   } finally {
     isProcessing.value = false
   }
 }
 
 onMounted(() => {
+  // 检查 FFmpeg 是否可用
+  invoke<boolean>('check_ffmpeg').then(ok => {
+    if (!ok) {
+      message('未检测到 FFmpeg，保存/另存为功能将无法使用。\n\n请先安装 FFmpeg 并添加到系统环境变量 PATH 中，然后重启本软件。\n\n下载地址: https://ffmpeg.org/download.html', {
+        title: '依赖缺失',
+        type: 'warning'
+      })
+    }
+  })
+
   // 尝试获取启动文件
   invoke<string>('get_startup_file').then(file => {
     if (file) {
