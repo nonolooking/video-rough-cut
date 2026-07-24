@@ -145,7 +145,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import { open } from '@tauri-apps/api/dialog'
-import { convertFileSrc } from '@tauri-apps/api/tauri'
+import { convertFileSrc, appWindow } from '@tauri-apps/api/tauri'
 
 const videoPath = ref<string>('')
 const videoUrl = ref<string>('')
@@ -189,10 +189,20 @@ function formatTime(seconds: number): string {
 async function loadVideo(path: string) {
   videoPath.value = path
   fileName.value = path.split(/[\\/]/).pop() || '未知文件'
-  videoUrl.value = convertFileSrc(path)
+  try {
+    videoUrl.value = convertFileSrc(path, 'assets')
+  } catch {
+    videoUrl.value = convertFileSrc(path)
+  }
   startTime.value = 0
   endTime.value = 0
   currentTime.value = 0
+  duration.value = 0
+  setTimeout(() => {
+    if (videoPlayer.value) {
+      videoPlayer.value.load()
+    }
+  }, 100)
 }
 
 async function openFile() {
